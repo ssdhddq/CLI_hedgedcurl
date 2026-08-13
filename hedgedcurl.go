@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -108,9 +109,14 @@ func getRequestWithTimeout(url string, ctx context.Context, resCh chan<- string,
 		return
 	}
 
-	header := resp.Header.Get("Content-Type")
+	var headersBuilder strings.Builder
+	for key, values := range resp.Header {
+		for _, value := range values {
+			headersBuilder.WriteString(fmt.Sprintf("%s: %s\n", key, value))
+		}
+	}
 
-	resCh <- fmt.Sprintf("url: %s \n status code: %d \n header: %s \n ", url, http.StatusOK, header)
+	resCh <- fmt.Sprintf("url: %s \n status code: %s %s \n header: %s \n ", url, resp.Proto, resp.Status, headersBuilder)
 	ctxCancel()
 
 	return
