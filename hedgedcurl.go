@@ -15,14 +15,14 @@ import (
 )
 
 func main() {
-	timeoutSF := flag.Duration("t", 0, "timeout seconds")
-	timeoutLF := flag.Duration("timeout", 0, "timeout seconds")
+	timeoutSF := flag.Int("t", 0, "timeout seconds")
+	timeoutLF := flag.Int("timeout", 0, "timeout seconds")
 
 	flag.Parse()
 
-	timeout := *timeoutSF
-	if timeout.Seconds() == 0 {
-		timeout = *timeoutLF
+	timeout := time.Duration(*timeoutSF)
+	if timeout == 0 {
+		timeout = time.Duration(*timeoutLF)
 	}
 
 	args := flag.Args()
@@ -115,8 +115,13 @@ func getRequestWithTimeout(url string, ctx context.Context, resCh chan<- string,
 			headersBuilder.WriteString(fmt.Sprintf("%s: %s\n", key, value))
 		}
 	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("Не смогли прочитать тело %s \n", url)
+	}
 
-	resCh <- fmt.Sprintf("url: %s \n status code: %s %s \n header: %s \n ", url, resp.Proto, resp.Status, headersBuilder)
+	resCh <- fmt.Sprintf("url: %s \n status code: %s %s \n header: %s \n body: %s ", url, resp.Proto, resp.Status,
+		headersBuilder, string(body))
 	ctxCancel()
 
 	return
