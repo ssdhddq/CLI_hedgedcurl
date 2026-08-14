@@ -15,15 +15,12 @@ import (
 )
 
 func main() {
-	timeoutSF := flag.Int("t", 0, "timeout seconds")
-	timeoutLF := flag.Int("timeout", 0, "timeout seconds")
-
+	var timeout int
+	flag.IntVar(&timeout, "t", 15, "timeout seconds")
+	flag.IntVar(&timeout, "timeout", 15, "timeout seconds")
 	flag.Parse()
 
-	timeout := time.Duration(*timeoutSF)
-	if timeout == 0 {
-		timeout = time.Duration(*timeoutLF)
-	}
+	timeoutDuration := time.Duration(timeout) * time.Second
 
 	args := flag.Args()
 
@@ -45,7 +42,7 @@ func main() {
 	}
 	for _, url := range args {
 		wg.Add(1)
-		go getRequestWithTimeout(url, ctx, resultChan, &wg, &timeoutValid, cancel, timeout)
+		go getRequestWithTimeout(url, ctx, resultChan, &wg, &timeoutValid, cancel, timeoutDuration)
 	}
 
 	go func() {
@@ -57,7 +54,7 @@ func main() {
 	case res := <-resultChan:
 		fmt.Printf("Первый ответ: %s", res)
 	case <-done:
-		if timeoutValid > 0 {
+		if atomic.LoadInt32(&timeoutValid) > 0 {
 			fmt.Println("Таймауты по url^ам")
 			os.Exit(228)
 		} else {
@@ -73,16 +70,12 @@ func getRequestWithTimeout(url string, ctx context.Context, resCh chan<- string,
 	timeoutCounter *int32, ctxCancel context.CancelFunc, timeout time.Duration) {
 	defer wg.Done()
 
-	var contextLocal context.Context
-	if timeout == 0 {
-		contextLocal = ctx
-	} else {
-		contextLocal, _ = context.WithTimeout(ctx, timeout)
-	}
+	contextLocal, cancelLocal := context.WithTimeout(ctx, timeout)
+
+	defer cancelLocal()
 
 	req, err := http.NewRequestWithContext(contextLocal, "GET", url, nil)
 	if err != nil {
-		ctxCancel()
 		fmt.Printf("Неверный url: %s, err: %v \n", url, err)
 		return
 	}
@@ -99,16 +92,6 @@ func getRequestWithTimeout(url string, ctx context.Context, resCh chan<- string,
 	}
 	defer resp.Body.Close()
 
-	if http.StatusOK != resp.StatusCode {
-		body, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		if err != nil {
-			fmt.Printf("Не смогли прочитать тело %s \n", url)
-			return
-		}
-		fmt.Printf("URL: %s, статус: %d \nТело ответа:\n%s \n", url, resp.StatusCode, string(body))
-		return
-	}
-
 	var headersBuilder strings.Builder
 	for key, values := range resp.Header {
 		for _, value := range values {
@@ -118,11 +101,16 @@ func getRequestWithTimeout(url string, ctx context.Context, resCh chan<- string,
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Printf("Не смогли прочитать тело %s \n", url)
+		resCh <- fmt.Sprintf("url: %s \n status code: %s %s \n header: %s \n", url, resp.Proto, resp.Status,
+			headersBuilder)
+
+		ctxCancel()
+		return
 	}
 
 	resCh <- fmt.Sprintf("url: %s \n status code: %s %s \n header: %s \n body: %s ", url, resp.Proto, resp.Status,
 		headersBuilder, string(body))
-	ctxCancel()
 
+	ctxCancel()
 	return
 }
