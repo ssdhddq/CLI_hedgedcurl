@@ -66,13 +66,6 @@ func main() {
 				os.Exit(1)
 			}
 		}
-		if atomic.LoadInt32(&timeoutValid) > 0 {
-			fmt.Println("Таймауты по url^ам")
-			os.Exit(228)
-		} else {
-			fmt.Println("Все запросы завершились с ошибками")
-			os.Exit(1)
-		}
 	}
 
 	os.Exit(0)
